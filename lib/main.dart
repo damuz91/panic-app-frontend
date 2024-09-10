@@ -181,7 +181,7 @@ class _SOSHomePageState extends State<SOSHomePage> {
         Uri.parse(url),
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "XXX"
+          "Authorization": apiKey
         },
         body: body,
       );
