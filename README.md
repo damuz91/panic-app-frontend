@@ -17,3 +17,14 @@ El código fuente está en la carpeta lib y los archivos con los parámetros de 
 Para correr el proyecto se requiere el backend corriendo y los puertos habilitados para tener conexiones en la red local. Modifique el contenido de los archivos de la carpeta assets como corresponda.
 
 Para el almacenamiento de datos en la app uso SQlite y el SharedPreferences.
+
+En la carpeta assets hay 2 archivos: `api_key.txt` y `backend_url.txt`, se deben modificar de acuerdo a la api_key que esté en el backend y a la url del backend, sea en local o producción. 
+La verdad no encontré donde colocar los parámetros sin necesidad de subirlos al repositorio, algo como las credenciales, o los secretos, entonces utilizo este mecanismo trivial para guardar los 'secretos', aunque no lo son porque se puede decompilar el paquete final para poder ver los valores, no lo mencionen. 
+
+## Despliegue
+
+Para desplegar la aplicación recomiendo los siguientes videos:
+https://www.youtube.com/watch?v=0zgDF81ZLrQ&ab_channel=HeyFlutter%E2%80%A4com
+https://www.youtube.com/watch?v=g0GNuoCOtaQ&ab_channel=HeyFlutter%E2%80%A4com
+
+Se debe generar el upload-keystore.jks el cual agregué al .gitignore

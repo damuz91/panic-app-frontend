@@ -41,5 +41,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-assets/api_key.txt
-assets/backend_url.txt
+/assets/api_key.txt
+/assets/backend_url.txt
+/android/key.properties
+/android/upload-keystore.jks
