@@ -1,9 +1,13 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'database_helper.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'subscription_page.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart'; // Importa el paquete de ads
 
 class SecondPage extends StatefulWidget {
   @override
@@ -17,6 +21,9 @@ class _SecondPageState extends State<SecondPage> {
   bool _isSubscribed = false;
   String _nombreUsuario = '';
   String _planUsuario = 'Gratuito';
+  String SUBSCRIPTION_ID = 'base';
+  BannerAd? _bannerAd; // Declaración del banner ad
+  bool _isBannerAdLoaded = false;
 
   @override
   void initState() {
@@ -24,6 +31,7 @@ class _SecondPageState extends State<SecondPage> {
     _loadUserName();
     _cargarContactos();
     _checkSubscription();
+    _loadBannerAd(); // Cargar el banner de publicidad
   }
 
   Future<void> _loadUserName() async {
@@ -41,12 +49,19 @@ class _SecondPageState extends State<SecondPage> {
   Future<void> _checkSubscription() async {
     final bool isAvailable = await _inAppPurchase.isAvailable();
     if (isAvailable) {
-      final ProductDetailsResponse response = await _inAppPurchase.queryProductDetails({'your_subscription_id_here'});
+      final ProductDetailsResponse response = await _inAppPurchase.queryProductDetails({SUBSCRIPTION_ID});
       setState(() {
         _isSubscribed = response.productDetails.any((product) {
-          return product.id == 'your_subscription_id_here';
+          return product.id == SUBSCRIPTION_ID;
         });
+        if(_isSubscribed){
+          _planUsuario = 'Premium';
+        }else{
+          _planUsuario = 'Gratuito';
+        }
       });
+    }else{
+      print("No se pudo obtener la disponibilidad de inAppPurchase");
     }
   }
 
@@ -56,6 +71,53 @@ class _SecondPageState extends State<SecondPage> {
     setState(() {
       contactos = datos;
     });
+  }
+
+  // Cargar el banner de publicidad
+  void _loadBannerAd() {
+    String adUnitId;
+    if (kReleaseMode) {
+      // IDs reales en modo release
+      if (Platform.isAndroid) {
+        adUnitId = 'ca-app-pub-3155383334923688/7174913553'; // ID de AdMob real para Android
+      } else if (Platform.isIOS) {
+        adUnitId = 'ca-app-pub-3155383334923688/5195617478'; // ID de AdMob real para iOS
+      } else {
+        throw UnsupportedError("Plataforma no soportada");
+      }
+    } else {
+      // IDs de prueba en modo desarrollo
+      if (Platform.isAndroid) {
+        adUnitId = 'ca-app-pub-3940256099942544/6300978111'; // ID de prueba para Android
+      } else if (Platform.isIOS) {
+        adUnitId = 'ca-app-pub-3940256099942544/2934735716'; // ID de prueba para iOS
+      } else {
+        throw UnsupportedError("Plataforma no soportada");
+      }
+    }
+    _bannerAd = BannerAd(
+      adUnitId: adUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (Ad ad) {
+          setState(() {
+            _isBannerAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (Ad ad, LoadAdError error) {
+          ad.dispose();
+          print('Error al cargar el banner: $error');
+        },
+      ),
+    );
+    _bannerAd!.load();
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
   }
 
   // Función para mostrar el formulario modal
@@ -129,12 +191,12 @@ class _SecondPageState extends State<SecondPage> {
       builder: (BuildContext context) {
         String nuevoNombre = _nombreUsuario;
         return AlertDialog(
-          title: Text('Editar Nombre'),
+          title: const Text('Editar Nombre'),
           content: TextField(
             onChanged: (value) {
               nuevoNombre = value;
             },
-            decoration: InputDecoration(hintText: "Nombre"),
+            decoration: const InputDecoration(hintText: "Nombre"),
             controller: TextEditingController(text: _nombreUsuario),
           ),
           actions: [
@@ -148,17 +210,17 @@ class _SecondPageState extends State<SecondPage> {
                   Navigator.of(context).pop();
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Por favor, ingresa un nombre válido.')),
+                    const SnackBar(content: Text('Por favor, ingresa un nombre válido.')),
                   );
                 }
               },
-              child: Text('Guardar'),
+              child: const Text('Guardar'),
             ),
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: Text('Cancelar'),
+              child: const Text('Cancelar'),
             ),
           ],
         );
@@ -172,107 +234,121 @@ class _SecondPageState extends State<SecondPage> {
       appBar: AppBar(
         title: const Text('Mis Datos'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // Sección con los datos del usuario
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
               children: [
-                Text('Nombre: $_nombreUsuario', style: TextStyle(fontSize: 18)),
-                IconButton(
-                  icon: Icon(Icons.edit),
-                  onPressed: _editarNombreUsuario,
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Plan: $_planUsuario', style: TextStyle(fontSize: 18)),
-                ElevatedButton(
-                  onPressed: _isSubscribed ? null : _mostrarSuscripcionPage,
-                  child: Text(_isSubscribed ? 'Suscrito' : 'Suscribirse'),
-                ),
-              ],
-            ),
-            SizedBox(height: 20),  // Espacio entre la información del usuario y los contactos
-            Text('Mis Contactos', style: TextStyle(fontSize: 18)),
-            Expanded(
-              child: contactos.isEmpty
-                  ? Center(child: Text('Aún no has agregado contactos de emergencia, agrega uno ahora.'))
-                  : SingleChildScrollView(
-                child: Table(
-                  border: TableBorder.all(),
-                  columnWidths: const <int, TableColumnWidth>{
-                    0: FlexColumnWidth(),
-                    1: FlexColumnWidth(),
-                    2: FlexColumnWidth(),
-                    3: FixedColumnWidth(80), // Espacio para el botón de eliminar
-                  },
+                // Sección con los datos del usuario
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    TableRow(
-                      decoration: BoxDecoration(color: Colors.grey[300]),
-                      children: const [
-                        Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Text(
-                            'Nombre',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Text(
-                            'Email',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Text(
-                            'Teléfono',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: Text(
-                            'Eliminar',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
+                    Text('Nombre: $_nombreUsuario', style: TextStyle(fontSize: 18)),
+                    IconButton(
+                      icon: Icon(Icons.edit),
+                      onPressed: _editarNombreUsuario,
                     ),
-                    ...contactos.map((contacto) {
-                      return TableRow(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text(contacto["name"]),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text(contacto["email"]),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Text(contacto["phone"]),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => _eliminarContacto(contacto["id"]),
-                          ),
-                        ],
-                      );
-                    }).toList(),
                   ],
                 ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Plan: $_planUsuario', style: TextStyle(fontSize: 18)),
+                    ElevatedButton(
+                      onPressed: _isSubscribed ? null : _mostrarSuscripcionPage,
+                      child: Text(_isSubscribed ? 'Suscrito' : 'Suscribirse'),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 20),
+                Text('Mis Contactos', style: TextStyle(fontSize: 18)),
+                Expanded(
+                  child: contactos.isEmpty
+                      ? Center(child: Text('Aún no has agregado contactos de emergencia, agrega uno ahora.'))
+                      : SingleChildScrollView(
+                    child: Table(
+                      border: TableBorder.all(),
+                      columnWidths: const <int, TableColumnWidth>{
+                        0: FlexColumnWidth(),
+                        1: FlexColumnWidth(),
+                        2: FlexColumnWidth(),
+                        3: FixedColumnWidth(80),
+                      },
+                      children: [
+                        TableRow(
+                          decoration: BoxDecoration(color: Colors.grey[300]),
+                          children: const [
+                            Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Text(
+                                'Nombre',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Text(
+                                'Email',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Text(
+                                'Teléfono',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Text(
+                                'Eliminar',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                        ...contactos.map((contacto) {
+                          return TableRow(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(contacto["name"]),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(contacto["email"]),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(contacto["phone"]),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => _eliminarContacto(contacto["id"]),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Banner en la parte inferior
+          if (_isBannerAdLoaded)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                width: _bannerAd!.size.width.toDouble(),
+                height: _bannerAd!.size.height.toDouble(),
+                child: AdWidget(ad: _bannerAd!),
               ),
             ),
-          ],
-        ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _mostrarFormularioContacto,

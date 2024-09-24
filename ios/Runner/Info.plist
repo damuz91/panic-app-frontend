@@ -51,5 +51,8 @@
     <key>NSLocationAlwaysUsageDescription</key>
     <string>Necesitamos tu ubicación para enviarla a tus contactos seleccionados</string>
 
+    <key>GADApplicationIdentifier</key>
+    <string>ca-app-pub-3155383334923688~9619756258</string>
+
 </dict>
 </plist>

@@ -1,15 +1,22 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'database_helper.dart';
 import 'second_page.dart';
+import 'subscription_page.dart'; // Asegúrate de importar la página de suscripciones
 import 'dart:io' show Platform;
 import 'package:geolocator/geolocator.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  unawaited(MobileAds.instance.initialize());
   runApp(MyApp());
 }
 
@@ -17,7 +24,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Botón de Pánico',
+      title: "Botón de Pánico",
       theme: ThemeData(
         primarySwatch: Colors.red,
       ),
@@ -33,14 +40,81 @@ class SOSHomePage extends StatefulWidget {
 
 class _SOSHomePageState extends State<SOSHomePage> {
   final DatabaseHelper dbHelper = DatabaseHelper();
+  BannerAd? _bannerAd;
   String apiKey = '';
   String backendUrl = '';
+  final InAppPurchase _inAppPurchase = InAppPurchase.instance;
+  bool _isSubscribed = false;
+  String _planUsuario = 'Gratuito';
+  String SUBSCRIPTION_ID = 'base';
 
   @override
   void initState() {
     super.initState();
+    _loadBannerAd();
     _loadTextFiles();
     _initializeLocation();
+    _checkSubscription();
+  }
+
+  Future<void> _checkSubscription() async {
+    final bool isAvailable = await _inAppPurchase.isAvailable();
+    if (isAvailable) {
+      final ProductDetailsResponse response = await _inAppPurchase.queryProductDetails({SUBSCRIPTION_ID});
+      setState(() {
+        _isSubscribed = response.productDetails.any((product) {
+          return product.id == SUBSCRIPTION_ID;
+        });
+        if(_isSubscribed){
+          _planUsuario = 'Premium';
+        }else{
+          _planUsuario = 'Gratuito';
+        }
+      });
+    }else{
+      print("No se pudo obtener la disponibilidad de inAppPurchase");
+    }
+  }
+
+  Future<void> _loadBannerAd() async {
+    String adUnitId;
+
+    if (kReleaseMode) {
+      if (Platform.isAndroid) {
+        adUnitId = 'ca-app-pub-3155383334923688/7174913553';
+      } else if (Platform.isIOS) {
+        adUnitId = 'ca-app-pub-3155383334923688/5195617478';
+      } else {
+        throw UnsupportedError("Plataforma no soportada");
+      }
+    } else {
+      if (Platform.isAndroid) {
+        adUnitId = 'ca-app-pub-3940256099942544/6300978111';
+      } else if (Platform.isIOS) {
+        adUnitId = 'ca-app-pub-3940256099942544/2934735716';
+      } else {
+        throw UnsupportedError("Plataforma no soportada");
+      }
+    }
+
+    BannerAd banner = BannerAd(
+      adUnitId: adUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _bannerAd = ad as BannerAd;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          print('Ad failed to load: $error');
+          ad.dispose();
+        },
+      ),
+    );
+
+    banner.load();
   }
 
   Future<void> _loadTextFiles() async {
@@ -51,7 +125,14 @@ class _SOSHomePageState extends State<SOSHomePage> {
       final backendUrlString = await rootBundle.loadString('assets/backend_url.txt');
       backendUrl = backendUrlString.trim();
       print("La url del backend es: $backendUrl");
-    } catch(e){
+    } catch (e) {
+      await showDialog(
+        context: context,
+        builder: (context) => new AlertDialog(
+          title: new Text('Message'),
+          content: Text("Error al leer el archivo: $e"),
+        ),
+      );
       print("Error al leer el archivo de api key: $e");
     }
   }
@@ -151,10 +232,40 @@ class _SOSHomePageState extends State<SOSHomePage> {
     );
   }
 
+  Future<void> _showIncompleteSubscriptionWarning(BuildContext context) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Suscripción Incompleta'),
+          content: const Text(
+              'Aún no has completado la suscripción, por favor completa la suscripción para poder enviar mensajes de alerta a más de 1 usuario al tiempo.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Cerrar'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SubscriptionPage()),
+                );
+              },
+            ),
+          ],
+        );
+      }
+    );
+  }
+
   Future<void> _sendPostRequest(String url) async {
     bool isProfileComplete = await _isProfileComplete();
     if (!isProfileComplete) {
       _showIncompleteProfileWarning(context);
+      return;
+    }
+
+    if (!_isSubscribed) {
+      _showIncompleteSubscriptionWarning(context);
       return;
     }
 
@@ -186,7 +297,6 @@ class _SOSHomePageState extends State<SOSHomePage> {
         body: body,
       );
       final Map<String, dynamic> responseData = jsonDecode(response.body);
-      // if (response.statusCode == 200) { }
       _showAlert(context, '${responseData['message']}');
     } catch (e) {
       _showAlert(context, 'Ha ocurrido un error al enviar la solicitud: $e');
@@ -242,7 +352,7 @@ class _SOSHomePageState extends State<SOSHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Botón de Pánico'),
+        title: Text("Botón de Pánico. Plan: $_planUsuario"),
         backgroundColor: Colors.purple[100],
         actions: <Widget>[
           IconButton(
@@ -256,72 +366,92 @@ class _SOSHomePageState extends State<SOSHomePage> {
           ),
         ],
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Container(
-              width: 200.0,
-              height: 200.0,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.red.withOpacity(0.6),
-                    spreadRadius: 10,
-                    blurRadius: 20,
+      body: Stack(
+        children: [
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Container(
+                  width: 200.0,
+                  height: 200.0,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.red.withOpacity(0.6),
+                        spreadRadius: 10,
+                        blurRadius: 20,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  shape: const CircleBorder(),
-                  padding: const EdgeInsets.all(20),
-                  backgroundColor: Colors.red,
-                ),
-                onPressed: () {
-                  _showConfirmationDialog(
-                    context,
-                    "Estás a punto de enviar un mensaje de auxilio real, ¿estás seguro de querer continuar?",
-                        () => _sendPostRequest("$backendUrl/send_sos"),
-                  );
-                },
-                child: const Text(
-                  'SOS',
-                  style: TextStyle(
-                    fontSize: 28,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      shape: const CircleBorder(),
+                      padding: const EdgeInsets.all(20),
+                      backgroundColor: Colors.red,
+                    ),
+                    onPressed: () {
+                      _showConfirmationDialog(
+                        context,
+                        "Estás a punto de enviar un mensaje de auxilio real, ¿estás seguro de querer continuar?",
+                            () => _sendPostRequest("$backendUrl/send_sos"),
+                      );
+                    },
+                    child: const Text(
+                      'SOS',
+                      style: TextStyle(
+                        fontSize: 28,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () {
+                    _showConfirmationDialog(
+                      context,
+                      "Estás a punto de realizar una prueba, ¿estás seguro de querer continuar?",
+                          () => _sendPostRequest("$backendUrl/send_test"),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 30, vertical: 15),
+                    backgroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30.0),
+                    ),
+                    elevation: 5,
+                  ),
+                  child: const Text(
+                    'Hacer Prueba',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_bannerAd != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                width: _bannerAd!.size.width.toDouble(),
+                height: 50, // Alto de 50px como solicitaste
+                child: AdWidget(ad: _bannerAd!),
               ),
             ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                _showConfirmationDialog(
-                  context,
-                  "Estás a punto de realizar una prueba, ¿estás seguro de querer continuar?",
-                      () => _sendPostRequest("$backendUrl/send_test"),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                backgroundColor: Colors.blueAccent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30.0),
-                ),
-                elevation: 5,
-              ),
-              child: const Text(
-                'Hacer Prueba',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
       backgroundColor: Colors.purple[50],
     );
+  }
+
+  @override
+  void dispose() {
+    _bannerAd?.dispose();
+    super.dispose();
   }
 }
